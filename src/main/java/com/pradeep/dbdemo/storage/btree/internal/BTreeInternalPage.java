@@ -272,6 +272,112 @@ public class BTreeInternalPage {
         return readEntry(low - 1).rightChildPageId();
     }
 
+    public int findChildIndex(long key) {
+
+        int low = 0;
+        int high = btreeInternalHeader.getEntryCount() - 1;
+
+        while (low <= high) {
+            int mid = low + (high - low) / 2;
+
+            BtreeInternalEntry entry = readEntry(mid);
+
+            if (key < entry.separatorKey()) {
+                high = mid - 1;
+            } else {
+                low = mid + 1;
+            }
+        }
+
+        return low;
+    }
+
+    public int childPageIdAt(int index) {
+
+        if (index == 0) {
+            return btreeInternalHeader.getLeftMostChildPageId();
+        }
+
+        return readEntry(index - 1).rightChildPageId();
+    }
+
+    public void removeEntry(int index) {
+
+        int count = btreeInternalHeader.getEntryCount();
+
+        int bytesToMove =
+                (count - index - 1) * BtreeInternalEntry.SIZE;
+
+        if (bytesToMove > 0) {
+            System.arraycopy(
+                    page.getData(),
+                    entryOffset(index + 1),
+                    page.getData(),
+                    entryOffset(index),
+                    bytesToMove
+            );
+        }
+
+        Arrays.fill(
+                page.getData(),
+                entryOffset(count - 1),
+                entryOffset(count),
+                (byte) 0
+        );
+
+        btreeInternalHeader.setEntryCount((short) (count - 1));
+
+        writeHeader();
+
+        page.markDirty();
+    }
+
+    public void updateSeparatorAt(int index, long newKey) {
+
+        BtreeInternalEntry existing = readEntry(index);
+
+        writeEntry(
+                index,
+                new BtreeInternalEntry(
+                        newKey,
+                        existing.rightChildPageId()
+                )
+        );
+
+        page.markDirty();
+    }
+
+    public List<BtreeInternalEntry> readAllEntries() {
+
+        List<BtreeInternalEntry> list =
+                new ArrayList<>(btreeInternalHeader.getEntryCount());
+
+        for (int i = 0; i < btreeInternalHeader.getEntryCount(); i++) {
+            list.add(readEntry(i));
+        }
+
+        return list;
+    }
+
+    public void rewriteAllEntries(List<BtreeInternalEntry> entries) {
+
+        rewriteEntries(page, btreeInternalHeader, entries);
+
+        page.markDirty();
+    }
+
+    public boolean underflows() {
+        return btreeInternalHeader.getEntryCount() < minEntries();
+    }
+
+    public boolean canLend() {
+        return btreeInternalHeader.getEntryCount() > minEntries();
+    }
+
+    public static int minEntries() {
+        return maxEntries() / 2;
+    }
+
     private void writeHeader() {
 
         ByteBuffer buffer =

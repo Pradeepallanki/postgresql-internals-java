@@ -1,32 +1,39 @@
 package com.pradeep.dbdemo.storage;
 
 import com.pradeep.dbdemo.cache.BufferPool;
+import com.pradeep.dbdemo.storage.fsm.FreeSpaceMap;
 
 import java.io.IOException;
 
 public class HeapFile {
     private final BufferPool bufferPool;
+    private final FreeSpaceMap freeSpaceMap;
 
-    public HeapFile(BufferPool bufferPool) {
+    public HeapFile(BufferPool bufferPool, FreeSpaceMap freeSpaceMap) {
         this.bufferPool = bufferPool;
+        this.freeSpaceMap = freeSpaceMap;
     }
 
     public RID insert(byte[] tuple) throws IOException {
-        long pageCount = bufferPool.getPageCount();
+        Integer freePageId = freeSpaceMap.findPageWithAtLeast(HeapPage.getTotalRequiredSpace(tuple.length));
 
-        for (int i = 0; i < pageCount; i++) {
-            Page page = bufferPool.fetchPage(i);
+        if (freePageId != -1) {
+            Page page = bufferPool.fetchPage(freePageId);
             HeapPage heapPage = new HeapPage(page);
-
-            if (heapPage.hasSpace(tuple.length)) {
-                return heapPage.insert(tuple);
-            }
+            RID rid = heapPage.insert(tuple);
+            freeSpaceMap.updateFreeSpace(
+                    freePageId,
+                    heapPage.getFreeBytes()
+            );
+            return rid;
         }
 
         int pageId = bufferPool.allocatePage();
         Page page = bufferPool.fetchPage(pageId);
         HeapPage heapPage = new HeapPage(page);
-        return heapPage.insert(tuple);
+        RID rid = heapPage.insert(tuple);
+        freeSpaceMap.updateFreeSpace(pageId, heapPage.getFreeBytes());
+        return rid;
     }
 
     public byte[] read(RID rid) throws IOException {
@@ -38,6 +45,10 @@ public class HeapFile {
         Page page = bufferPool.fetchPage(rid.pageId());
         HeapPage heapPage = new HeapPage(page);
         heapPage.delete(rid);
+        freeSpaceMap.updateFreeSpace(
+                rid.pageId(),
+                heapPage.getFreeBytes()
+        );
         return true;
     }
 }

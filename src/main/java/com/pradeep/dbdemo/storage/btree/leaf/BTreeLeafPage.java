@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
@@ -63,6 +64,18 @@ public class BTreeLeafPage {
         int fixedOverHead = PageHeader.SIZE + BTreeLeafHeader.SIZE;
 
         return (Page.PAGE_SIZE - fixedOverHead) / (KEY_SIZE + RID_SIZE);
+    }
+
+    public static int minEntries() {
+        return maxEntries() / 2;
+    }
+
+    public boolean underflows() {
+        return bTreeLeafHeader.getEntryCount() < minEntries();
+    }
+
+    public boolean canLend() {
+        return bTreeLeafHeader.getEntryCount() > minEntries();
     }
 
     public Page getPage() {
@@ -250,6 +263,122 @@ public class BTreeLeafPage {
         writeEntry(indexToInsert, entry);
 
         this.bTreeLeafHeader.setEntryCount((short) (this.bTreeLeafHeader.getEntryCount() + 1));
+        writeHeader();
+
+        page.markDirty();
+    }
+
+    public boolean delete(long key) {
+
+        int index = findKeyIndex(key);
+
+        if (index == -1) {
+            return false;
+        }
+
+        int count = bTreeLeafHeader.getEntryCount();
+
+        int bytesToMove =
+                (count - index - 1) * BtreeLeafEntry.SIZE;
+
+        if (bytesToMove > 0) {
+            System.arraycopy(
+                    page.getData(),
+                    entryOffset(index + 1),
+                    page.getData(),
+                    entryOffset(index),
+                    bytesToMove
+            );
+        }
+
+        Arrays.fill(
+                page.getData(),
+                entryOffset(count - 1),
+                entryOffset(count),
+                (byte) 0
+        );
+
+        bTreeLeafHeader.setEntryCount((short) (count - 1));
+
+        writeHeader();
+
+        page.markDirty();
+
+        return true;
+    }
+
+    private int findKeyIndex(long key) {
+
+        int low = 0;
+        int high = bTreeLeafHeader.getEntryCount() - 1;
+
+        while (low <= high) {
+            int mid = low + (high - low) / 2;
+            long midKey = readEntry(mid).key();
+
+            if (midKey == key) {
+                return mid;
+            }
+
+            if (key < midKey) {
+                high = mid - 1;
+            } else {
+                low = mid + 1;
+            }
+        }
+
+        return -1;
+    }
+
+    public long firstKey() {
+        return readEntry(0).key();
+    }
+
+    public List<BtreeLeafEntry> readAllEntries() {
+
+        List<BtreeLeafEntry> list =
+                new ArrayList<>(bTreeLeafHeader.getEntryCount());
+
+        for (int i = 0; i < bTreeLeafHeader.getEntryCount(); i++) {
+            list.add(readEntry(i));
+        }
+
+        return list;
+    }
+
+    public void rewriteAllEntries(List<BtreeLeafEntry> entries) {
+
+        rewriteEntries(page, bTreeLeafHeader, entries);
+
+        page.markDirty();
+    }
+
+    public void mergeFrom(BTreeLeafPage sibling) {
+
+        List<BtreeLeafEntry> combined =
+                new ArrayList<>(readAllEntries());
+
+        for (BtreeLeafEntry siblingEntry : sibling.readAllEntries()) {
+
+            int idx = Collections.binarySearch(
+                    combined,
+                    new BtreeLeafEntry(siblingEntry.key(), null),
+                    Comparator.comparingLong(BtreeLeafEntry::key)
+            );
+
+            if (idx >= 0) {
+                continue;
+            }
+
+            combined.add(-idx - 1, siblingEntry);
+        }
+
+        rewriteAllEntries(combined);
+
+        bTreeLeafHeader.setNextLeafPageId(
+                sibling.getbTreeLeafHeader().getNextLeafPageId()
+        );
+
         writeHeader();
 
         page.markDirty();

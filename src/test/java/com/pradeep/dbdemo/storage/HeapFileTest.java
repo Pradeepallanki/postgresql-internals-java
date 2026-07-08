@@ -1,6 +1,8 @@
 package com.pradeep.dbdemo.storage;
 
 import com.pradeep.dbdemo.cache.BufferPool;
+import com.pradeep.dbdemo.storage.fsm.FreeSpaceMap;
+import com.pradeep.dbdemo.storage.fsm.InMemoryFSMImpl;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,12 +18,14 @@ class HeapFileTest {
     private Path dbFile;
     private DiskManager diskManager;
     private BufferPool bufferPool;
+    private FreeSpaceMap freeSpaceMap;
 
     @BeforeEach
     void setup() throws Exception {
         dbFile = Files.createTempFile("mini", ".db");
         diskManager = new DiskManager(dbFile);
         bufferPool = new BufferPool(diskManager);
+        freeSpaceMap = new InMemoryFSMImpl();
     }
 
     @AfterEach
@@ -33,7 +37,7 @@ class HeapFileTest {
     @Test
     void shouldAllocateMultiplePages() throws Exception {
 
-        HeapFile heapFile = new HeapFile(bufferPool);
+        HeapFile heapFile = new HeapFile(bufferPool, freeSpaceMap);
 
         byte[] tuple = new byte[500];
 
@@ -52,7 +56,7 @@ class HeapFileTest {
     @Test
     void shouldReadEveryTuple() throws Exception {
 
-        HeapFile heapFile = new HeapFile(bufferPool);
+        HeapFile heapFile = new HeapFile(bufferPool, freeSpaceMap);
 
         List<RID> rids = new ArrayList<>();
 
@@ -82,7 +86,7 @@ class HeapFileTest {
     @Test
     void shouldDeleteAcrossPages() throws Exception {
 
-        HeapFile heapFile = new HeapFile(bufferPool);
+        HeapFile heapFile = new HeapFile(bufferPool, freeSpaceMap);
 
         List<RID> rids = new ArrayList<>();
 
@@ -122,7 +126,7 @@ class HeapFileTest {
     void shouldSurviveRestart() throws Exception {
 
         HeapFile heapFile =
-                new HeapFile(bufferPool);
+                new HeapFile(bufferPool, freeSpaceMap);
 
         List<RID> rids = new ArrayList<>();
 
@@ -147,7 +151,7 @@ class HeapFileTest {
         bufferPool = new BufferPool(diskManager);
 
         heapFile =
-                new HeapFile(bufferPool);
+                new HeapFile(bufferPool, freeSpaceMap);
 
         for (int i = 0; i < tuples.size(); i++) {
 
@@ -167,7 +171,7 @@ class HeapFileTest {
     void shouldHandleThousandsOfTuples() throws Exception {
 
         HeapFile heapFile =
-                new HeapFile(bufferPool);
+                new HeapFile(bufferPool, freeSpaceMap);
 
         List<RID> rids = new ArrayList<>();
 
@@ -179,7 +183,10 @@ class HeapFileTest {
                     ("User-" + i).getBytes();
 
             tuples.add(tuple);
-
+            System.out.println("Itr" + i);
+            if(i==637) {
+                System.out.println("Hey");
+            }
             rids.add(heapFile.insert(tuple));
 
         }

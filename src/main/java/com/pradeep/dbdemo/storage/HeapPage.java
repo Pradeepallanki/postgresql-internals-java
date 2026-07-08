@@ -15,7 +15,7 @@ public class HeapPage {
             throw new IllegalStateException("Page size is full");
         }
 
-        if(tuple.length == 0) {
+        if (tuple.length == 0) {
             throw new IllegalArgumentException("tuple cannot be empty");
         }
 
@@ -80,6 +80,17 @@ public class HeapPage {
         int freeBytes = page.getPageHeader().getFreeSpaceOffSet() - slotDirectoryEnd;
 
         return freeBytes >= (tupleSize + Slot.SIZE);
+    }
+
+    public Integer getFreeBytes() {
+        int slotCount = page.getPageHeader().getSlotCount();
+        int slotDirectoryEnd = PageHeader.SIZE + (slotCount * Slot.SIZE); // you want to know which is the lastOffset you need to read to know about the last slot written.
+
+        return page.getPageHeader().getFreeSpaceOffSet() - slotDirectoryEnd;
+    }
+
+    public static Integer getTotalRequiredSpace(int tupleSize) {
+        return tupleSize + Slot.SIZE;
     }
 
 
