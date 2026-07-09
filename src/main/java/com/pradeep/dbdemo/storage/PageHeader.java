@@ -55,6 +55,8 @@ public class PageHeader {
         EMPTY,
         HEAP,
         BTREE_INTERNAL,
-        BTREE_LEAF
+        BTREE_LEAF,
+        FSM_LEAF,
+        FMS_INTERNAL
     }
 }

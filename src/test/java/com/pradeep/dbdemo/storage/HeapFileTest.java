@@ -183,10 +183,7 @@ class HeapFileTest {
                     ("User-" + i).getBytes();
 
             tuples.add(tuple);
-            System.out.println("Itr" + i);
-            if(i==637) {
-                System.out.println("Hey");
-            }
+
             rids.add(heapFile.insert(tuple));
 
         }
