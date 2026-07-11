@@ -36,6 +36,10 @@ public class FSMInternalPage {
         return FSMInternalHeader.readFrom(byteBuffer);
     }
 
+    public Page getPage() {
+        return page;
+    }
+
     public int getEntryCount() {
         return this.fsmInternalHeader.getEntryCount();
     }
@@ -100,6 +104,20 @@ public class FSMInternalPage {
         }
 
         return max;
+    }
+
+    public int findChildIdWithAtLeast(int size) {
+        if (fsmInternalHeader.getEntryCount() == 0) {
+            return -1;
+        }
+
+        for (int i = 0; i < fsmInternalHeader.getEntryCount(); i++) {
+            if (readEntry(i).getFreeSpace() >= size) {
+                return getChildPageId(i);
+            }
+        }
+
+        return -1;
     }
 
     public boolean containsChild(int childPageId) {

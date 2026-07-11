@@ -3,7 +3,7 @@ package com.pradeep.dbdemo.storage.fsm;
 public interface FreeSpaceMap {
     void updateFreeSpace(int pageId, int freeBytes);
 
-    Integer findPageWithAtLeast(int requiredBytes);
+    int findPageWithAtLeast(int requiredBytes);
 
     void removePage(int pageId);
 

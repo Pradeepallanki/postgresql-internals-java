@@ -15,7 +15,7 @@ public class HeapFile {
     }
 
     public RID insert(byte[] tuple) throws IOException {
-        Integer freePageId = freeSpaceMap.findPageWithAtLeast(HeapPage.getTotalRequiredSpace(tuple.length));
+        int freePageId = freeSpaceMap.findPageWithAtLeast(HeapPage.getTotalRequiredSpace(tuple.length));
 
         if (freePageId != -1) {
             Page page = bufferPool.fetchPage(freePageId);

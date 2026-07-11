@@ -1,8 +1,9 @@
 package com.pradeep.dbdemo.storage;
 
 import com.pradeep.dbdemo.cache.BufferPool;
+import com.pradeep.dbdemo.storage.fsm.DiskFSMImpl;
+import com.pradeep.dbdemo.storage.fsm.FSMFile;
 import com.pradeep.dbdemo.storage.fsm.FreeSpaceMap;
-import com.pradeep.dbdemo.storage.fsm.InMemoryFSMImpl;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,7 +26,9 @@ class HeapFileTest {
         dbFile = Files.createTempFile("mini", ".db");
         diskManager = new DiskManager(dbFile);
         bufferPool = new BufferPool(diskManager);
-        freeSpaceMap = new InMemoryFSMImpl();
+
+        FSMFile fsmFile = new FSMFile(bufferPool);
+        freeSpaceMap = new DiskFSMImpl(fsmFile, bufferPool);
     }
 
     @AfterEach

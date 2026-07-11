@@ -14,24 +14,21 @@ public class FSMLeafPage {
         this(readHeader(page), page);
     }
 
-    public FSMLeafPage(int firstHeapPageId, Page page) {
-        this(writeHeader(firstHeapPageId, page), page);
+    public static FSMLeafPage createFresh(Page page) {
+        FSMLeafHeader header = new FSMLeafHeader(0);
+
+        ByteBuffer buffer = ByteBuffer.wrap(page.getData());
+        buffer.position(PageHeader.SIZE);
+        header.writeTo(buffer);
+
+        page.markDirty();
+
+        return new FSMLeafPage(header, page);
     }
 
     public FSMLeafPage(FSMLeafHeader fsmLeafHeader, Page page) {
         this.fsmLeafHeader = fsmLeafHeader;
         this.page = page;
-    }
-
-    private static FSMLeafHeader writeHeader(int firstHeapPageId, Page page) {
-        FSMLeafHeader fsmLeafHeader = new FSMLeafHeader(firstHeapPageId, 0);
-
-        ByteBuffer buffer = ByteBuffer.wrap(page.getData());
-        buffer.position(PageHeader.SIZE);
-        fsmLeafHeader.writeTo(buffer);
-
-        page.markDirty();
-        return fsmLeafHeader;
     }
 
     private static FSMLeafHeader readHeader(Page page) {
@@ -40,8 +37,8 @@ public class FSMLeafPage {
         return FSMLeafHeader.readFrom(buffer);
     }
 
-    public int getFirstHeapPageId() {
-        return this.fsmLeafHeader.getFirstHeapPageId();
+    public Page getPage() {
+        return page;
     }
 
     public int getEntryCount() {
@@ -49,46 +46,36 @@ public class FSMLeafPage {
     }
 
     public int getFreeSpace(int heapPageId) {
-        int offSet = getOffSet(heapPageId);
+        int index = findIndex(heapPageId);
 
-        if (offSet < 0) {
+        if (index < 0) {
             throw new IllegalArgumentException(
                     "Heap page " + heapPageId + " not tracked in this FSM leaf.");
         }
 
-        return readEntryFromOffSet(offSet).getFreeSpace();
+        return readEntry(index).getFreeSpace();
     }
 
     public void updateFreeSpace(int heapPageId, int freeBytes) {
-        int offSet = getOffSet(heapPageId);
+        int index = findIndex(heapPageId);
 
-        if (offSet >= 0) {
-            FSMLeafEntry fsmLeafEntry = readEntryFromOffSet(offSet);
-            fsmLeafEntry.setFreeSpace((short) freeBytes);
-            writeEntryIntoOffSet(fsmLeafEntry, offSet);
+        if (index >= 0) {
+            FSMLeafEntry entry = readEntry(index);
+            entry.setFreeSpace((short) freeBytes);
+            writeEntry(index, entry);
             page.markDirty();
             return;
         }
 
-        int expectedNextHeapPageId =
-                fsmLeafHeader.getFirstHeapPageId() + fsmLeafHeader.getEntryCount();
-
-        if (heapPageId != expectedNextHeapPageId) {
-            throw new IllegalArgumentException(
-                    "Heap page " + heapPageId
-                            + " is out of order; expected " + expectedNextHeapPageId);
-        }
-
-        if (!hasSpace(FSMLeafEntry.SIZE)) {
+        if (!hasSpace()) {
             throw new IllegalStateException("No space left in the page");
         }
 
-        FSMLeafEntry fsmLeafEntry =
-                new FSMLeafEntry(heapPageId, (short) freeBytes);
+        int insertAt = -(index + 1);
 
-        int newOffSet = entryOffset(fsmLeafHeader.getEntryCount());
+        shiftEntriesRight(insertAt);
 
-        writeEntryIntoOffSet(fsmLeafEntry, newOffSet);
+        writeEntry(insertAt, new FSMLeafEntry(heapPageId, (short) freeBytes));
 
         fsmLeafHeader.setEntryCount(fsmLeafHeader.getEntryCount() + 1);
 
@@ -98,27 +85,76 @@ public class FSMLeafPage {
     }
 
     public boolean containsHeapPage(int heapPageId) {
-        return getOffSet(heapPageId) >= 0;
+        return findIndex(heapPageId) >= 0;
     }
 
     public int getMaxFreeSpace() {
-
         if (fsmLeafHeader.getEntryCount() == 0) {
             return -1;
         }
 
-        int maxSpace = Integer.MIN_VALUE;
+        int max = Integer.MIN_VALUE;
 
-        int first = fsmLeafHeader.getFirstHeapPageId();
-        int last = first + fsmLeafHeader.getEntryCount() - 1;
-
-        for (int i = first; i <= last; i++) {
-            maxSpace = Math.max(
-                    maxSpace,
-                    readEntryFromOffSet(getOffSet(i)).getFreeSpace());
+        for (int i = 0; i < fsmLeafHeader.getEntryCount(); i++) {
+            max = Math.max(max, readEntry(i).getFreeSpace());
         }
 
-        return maxSpace;
+        return max;
+    }
+
+    public int getPageIdWithAtLeast(int requiredSize) {
+        for (int i = 0; i < fsmLeafHeader.getEntryCount(); i++) {
+            FSMLeafEntry entry = readEntry(i);
+            if (entry.getFreeSpace() >= requiredSize) {
+                return entry.getPageId();
+            }
+        }
+
+        return -1;
+    }
+
+    public boolean hasSpace() {
+        int currentlyOccupiedSpace =
+                PageHeader.SIZE
+                        + FSMLeafHeader.SIZE
+                        + (fsmLeafHeader.getEntryCount() * FSMLeafEntry.SIZE);
+        return (Page.PAGE_SIZE - currentlyOccupiedSpace) >= FSMLeafEntry.SIZE;
+    }
+
+    private int findIndex(int heapPageId) {
+        int low = 0;
+        int high = fsmLeafHeader.getEntryCount() - 1;
+
+        while (low <= high) {
+            int mid = low + (high - low) / 2;
+            int midKey = readEntry(mid).getPageId();
+
+            if (midKey == heapPageId) {
+                return mid;
+            }
+
+            if (heapPageId < midKey) {
+                high = mid - 1;
+            } else {
+                low = mid + 1;
+            }
+        }
+
+        return -(low + 1);
+    }
+
+    private void shiftEntriesRight(int fromIndex) {
+        int count = fsmLeafHeader.getEntryCount();
+        int bytesToMove = (count - fromIndex) * FSMLeafEntry.SIZE;
+
+        if (bytesToMove <= 0) {
+            return;
+        }
+
+        int src = entryOffset(fromIndex);
+        int dst = entryOffset(fromIndex + 1);
+
+        System.arraycopy(page.getData(), src, page.getData(), dst, bytesToMove);
     }
 
     private void writeHeader() {
@@ -127,35 +163,16 @@ public class FSMLeafPage {
         fsmLeafHeader.writeTo(buffer);
     }
 
-    private void writeEntryIntoOffSet(FSMLeafEntry fsmLeafEntry, int offSet) {
-        ByteBuffer byteBuffer = ByteBuffer.wrap(page.getData());
-        byteBuffer.position(offSet);
-        fsmLeafEntry.writeInto(byteBuffer);
+    private FSMLeafEntry readEntry(int index) {
+        ByteBuffer buffer = ByteBuffer.wrap(page.getData());
+        buffer.position(entryOffset(index));
+        return FSMLeafEntry.readFrom(buffer);
     }
 
-    private FSMLeafEntry readEntryFromOffSet(int offSet) {
-        ByteBuffer byteBuffer = ByteBuffer.wrap(this.page.getData());
-        byteBuffer.position(offSet);
-        return FSMLeafEntry.readFrom(byteBuffer);
-    }
-
-    private boolean hasSpace(int size) {
-        int currentlyOccupiedSpace =
-                PageHeader.SIZE
-                        + FSMLeafHeader.SIZE
-                        + (fsmLeafHeader.getEntryCount() * FSMLeafEntry.SIZE);
-        return (Page.PAGE_SIZE - currentlyOccupiedSpace) >= size;
-    }
-
-    private int getOffSet(int heapPageId) {
-        int first = fsmLeafHeader.getFirstHeapPageId();
-        int index = heapPageId - first;
-
-        if (index < 0 || index >= fsmLeafHeader.getEntryCount()) {
-            return -1;
-        }
-
-        return entryOffset(index);
+    private void writeEntry(int index, FSMLeafEntry entry) {
+        ByteBuffer buffer = ByteBuffer.wrap(page.getData());
+        buffer.position(entryOffset(index));
+        entry.writeInto(buffer);
     }
 
     private int entryOffset(int index) {

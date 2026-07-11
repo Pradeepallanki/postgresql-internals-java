@@ -33,7 +33,7 @@ public class InMemoryFSMImpl implements FreeSpaceMap {
     }
 
     @Override
-    public Integer findPageWithAtLeast(int requiredBytes) {
+    public int findPageWithAtLeast(int requiredBytes) {
         Map.Entry<Integer, Set<Integer>> entry = treeMap.firstEntry();
 
         if (entry != null && entry.getKey() >= requiredBytes) {
