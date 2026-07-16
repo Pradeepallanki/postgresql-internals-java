@@ -58,6 +58,7 @@ public class PageHeader {
         BTREE_LEAF,
         FSM_LEAF,
         FSM_INTERNAL,
-        FSM_META
+        FSM_META,
+        CATALOG
     }
 }

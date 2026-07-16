@@ -1,6 +1,6 @@
 package com.pradeep.dbdemo.storage.btree.leaf;
 
-import com.pradeep.dbdemo.cache.BufferPool;
+import com.pradeep.dbdemo.bufferpool.BufferPool;
 import com.pradeep.dbdemo.storage.Page;
 import com.pradeep.dbdemo.storage.PageHeader;
 import com.pradeep.dbdemo.storage.RID;
@@ -141,7 +141,7 @@ public class BTreeLeafPage {
 
             nextLeaf.writeHeader();
 
-            nextPage.markDirty();
+            bufferPool.markDirty(nextPage.getPageId());
         }
 
         rewriteEntries(
@@ -156,8 +156,8 @@ public class BTreeLeafPage {
                 rightEntries
         );
 
-        page.markDirty();
-        newPage.markDirty();
+        bufferPool.markDirty(page.getPageId());
+        bufferPool.markDirty(newPage.getPageId());
 
         return new LeafSplitResult(
                 rightEntries.getFirst().key(),
@@ -265,7 +265,7 @@ public class BTreeLeafPage {
         this.bTreeLeafHeader.setEntryCount((short) (this.bTreeLeafHeader.getEntryCount() + 1));
         writeHeader();
 
-        page.markDirty();
+        bufferPool.markDirty(page.getPageId());
     }
 
     public boolean delete(long key) {
@@ -302,7 +302,7 @@ public class BTreeLeafPage {
 
         writeHeader();
 
-        page.markDirty();
+        bufferPool.markDirty(page.getPageId());
 
         return true;
     }
@@ -350,7 +350,7 @@ public class BTreeLeafPage {
 
         rewriteEntries(page, bTreeLeafHeader, entries);
 
-        page.markDirty();
+        bufferPool.markDirty(page.getPageId());
     }
 
     public void mergeFrom(BTreeLeafPage sibling) {
@@ -381,7 +381,7 @@ public class BTreeLeafPage {
 
         writeHeader();
 
-        page.markDirty();
+        bufferPool.markDirty(page.getPageId());
     }
 
     public RID search(long key) {

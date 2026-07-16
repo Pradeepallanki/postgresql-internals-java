@@ -59,7 +59,7 @@ public class DiskManager implements AutoCloseable {
         ByteBuffer buffer = ByteBuffer.wrap(data);
 
         PageHeader pageHeader = PageHeader.readFrom(buffer);
-        return new Page(pageId, data, pageHeader, false);
+        return new Page(pageId, data, pageHeader);
     }
 
     public long getPageCount() throws IOException {

@@ -1,5 +1,6 @@
 package com.pradeep.dbdemo.storage.fsm;
 
+import com.pradeep.dbdemo.bufferpool.BufferPool;
 import com.pradeep.dbdemo.storage.Page;
 import com.pradeep.dbdemo.storage.PageHeader;
 
@@ -8,26 +9,28 @@ import java.nio.ByteBuffer;
 public class FSMInternalPage {
     private final Page page;
     private final FSMInternalHeader fsmInternalHeader;
+    private final BufferPool bufferPool;
 
-    public FSMInternalPage(Page page) {
-        this(page, readHeader(page));
+    public FSMInternalPage(Page page, BufferPool bufferPool) {
+        this(page, readHeader(page), bufferPool);
     }
 
-    public FSMInternalPage(Page page, FSMInternalHeader fsmInternalHeader) {
+    public FSMInternalPage(Page page, FSMInternalHeader fsmInternalHeader, BufferPool bufferPool) {
         this.page = page;
         this.fsmInternalHeader = fsmInternalHeader;
+        this.bufferPool = bufferPool;
     }
 
-    public static FSMInternalPage createFresh(Page page) {
+    public static FSMInternalPage createFresh(Page page, BufferPool bufferPool) {
         FSMInternalHeader header = new FSMInternalHeader(0);
 
         ByteBuffer buffer = ByteBuffer.wrap(page.getData());
         buffer.position(PageHeader.SIZE);
         header.writeInto(buffer);
 
-        page.markDirty();
+        bufferPool.markDirty(page.getPageId());
 
-        return new FSMInternalPage(page, header);
+        return new FSMInternalPage(page, header, bufferPool);
     }
 
     private static FSMInternalHeader readHeader(Page page) {
@@ -51,7 +54,7 @@ public class FSMInternalPage {
             FSMInternalEntry existing = readEntry(index);
             existing.setFreeSpace((short) maxFreeSpace);
             writeEntry(index, existing);
-            page.markDirty();
+            bufferPool.markDirty(page.getPageId());
             return;
         }
 
@@ -70,7 +73,7 @@ public class FSMInternalPage {
 
         writeHeader();
 
-        page.markDirty();
+        bufferPool.markDirty(page.getPageId());
     }
 
     public int getChildSummary(int childPageId) {

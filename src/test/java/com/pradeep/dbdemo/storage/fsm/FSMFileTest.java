@@ -1,6 +1,6 @@
 package com.pradeep.dbdemo.storage.fsm;
 
-import com.pradeep.dbdemo.cache.BufferPool;
+import com.pradeep.dbdemo.bufferpool.BufferPool;
 import com.pradeep.dbdemo.storage.DiskManager;
 import com.pradeep.dbdemo.storage.Page;
 import org.junit.jupiter.api.AfterEach;
@@ -61,7 +61,7 @@ class FSMFileTest {
         bufferPool.flushAll();
 
         Page rawPage = bufferPool.fetchPage(metaPageId);
-        FSMMetaPage reloaded = new FSMMetaPage(rawPage);
+        FSMMetaPage reloaded = new FSMMetaPage(rawPage, bufferPool);
 
         assertEquals(FSMMetaPage.INVALID_PAGE_ID, reloaded.getRootPageId());
         assertEquals(0, reloaded.getTreeHeight());

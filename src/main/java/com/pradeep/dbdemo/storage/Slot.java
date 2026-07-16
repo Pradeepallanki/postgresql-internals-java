@@ -6,7 +6,7 @@ public class Slot {
     private short offset;// our page size if 8192 bytes, in Java short can store -327678 - 32767. That's enough to store the offset
     private short length;
     private boolean deleted;
-    public static final int SIZE = 5;
+    public static final int SIZE = 6; // 2 bytes offset + 2 bytes length + 2 bytes deleted-flag stored as short
 
     public Slot(short offset, short length, boolean deleted) {
         this.offset = offset;

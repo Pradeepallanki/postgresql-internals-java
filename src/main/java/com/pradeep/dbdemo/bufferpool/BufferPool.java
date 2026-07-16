@@ -1,4 +1,4 @@
-package com.pradeep.dbdemo.cache;
+package com.pradeep.dbdemo.bufferpool;
 
 import com.pradeep.dbdemo.storage.DiskManager;
 import com.pradeep.dbdemo.storage.Page;
@@ -13,8 +13,9 @@ import java.util.Map;
 
 public class BufferPool {
     private final DiskManager diskManager;
-    private final Map<Integer, Page> cache;
+    private final Map<Integer, BufferDescriptor> cache;
     private final Deque<Integer> freePages;
+    private static final int CACHE_SIZE = 1024;
 
     public BufferPool(DiskManager diskManager) {
         this.diskManager = diskManager;
@@ -24,11 +25,15 @@ public class BufferPool {
 
     public Page fetchPage(int pageId) throws IOException {
         if (cache.containsKey(pageId)) {
-            return cache.get(pageId);
+            return cache.get(pageId).getPage();
         }
 
         Page page = diskManager.readPage(pageId);
-        cache.put(pageId, page);
+
+        if (cache.size() != CACHE_SIZE) {
+            cache.put(pageId, new BufferDescriptor(pageId, page));
+        }
+
         return page;
     }
 
@@ -40,7 +45,7 @@ public class BufferPool {
             page.getPageHeader().setPageType(PageHeader.PageType.EMPTY);
             page.getPageHeader().setSlotCount(0);
             page.getPageHeader().setFreeSpaceOffSet(Page.PAGE_SIZE);
-            page.markDirty();
+            markDirty(reused);
             return reused;
         }
         return this.diskManager.allocatePage();
@@ -52,7 +57,7 @@ public class BufferPool {
         page.getPageHeader().setPageType(PageHeader.PageType.EMPTY);
         page.getPageHeader().setSlotCount(0);
         page.getPageHeader().setFreeSpaceOffSet(Page.PAGE_SIZE);
-        page.markDirty();
+        markDirty(pageId);
         freePages.addLast(pageId);
     }
 
@@ -61,32 +66,40 @@ public class BufferPool {
     }
 
     public void flushPage(int pageId) throws IOException {
-        Page page = cache.get(pageId);
+        BufferDescriptor descriptor = cache.get(pageId);
 
-        if (page == null) {
+        if (descriptor == null) {
             return;
         }
 
-        if (!page.isDirty()) {
+        if (!descriptor.isDirty()) {
             return;
         }
 
-        diskManager.writePage(page);
+        diskManager.writePage(descriptor.getPage());
 
-        page.markNotDirty();
+        descriptor.markUnDirty();
     }
 
     public void flushAll() throws IOException {
-        for (Map.Entry<Integer, Page> entry : cache.entrySet()) {
+        for (Map.Entry<Integer, BufferDescriptor> entry : cache.entrySet()) {
             if (entry.getValue().isDirty()) {
-                diskManager.writePage(entry.getValue());
-                entry.getValue().markNotDirty();
+                diskManager.writePage(entry.getValue().getPage());
+                entry.getValue().markUnDirty();
             }
         }
     }
 
     public long getPageCount() throws IOException {
         return diskManager.getPageCount();
+    }
+
+    public void markDirty(int pageId) {
+        this.cache.get(pageId).markDirty();
+    }
+
+    public void markNotDirty(int pageId) {
+        this.cache.get(pageId).markUnDirty();
     }
 
 }

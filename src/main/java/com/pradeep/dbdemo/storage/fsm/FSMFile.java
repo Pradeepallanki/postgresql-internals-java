@@ -1,6 +1,6 @@
 package com.pradeep.dbdemo.storage.fsm;
 
-import com.pradeep.dbdemo.cache.BufferPool;
+import com.pradeep.dbdemo.bufferpool.BufferPool;
 import com.pradeep.dbdemo.storage.Page;
 import com.pradeep.dbdemo.storage.PageHeader;
 
@@ -19,7 +19,7 @@ public class FSMFile {
         Page page = bufferPool.fetchPage(metaPageId);
         page.getPageHeader().setPageType(PageHeader.PageType.FSM_META);
 
-        this.metaPage = FSMMetaPage.createFresh(page, metaPageId + 1);
+        this.metaPage = FSMMetaPage.createFresh(page, metaPageId + 1, bufferPool);
     }
 
     public FSMFile(BufferPool bufferPool, int metaPageId) throws IOException {
@@ -28,7 +28,7 @@ public class FSMFile {
 
         Page page = bufferPool.fetchPage(metaPageId);
 
-        this.metaPage = new FSMMetaPage(page);
+        this.metaPage = new FSMMetaPage(page, bufferPool);
     }
 
     public FSMMetaPage getMetaPage() {
@@ -40,11 +40,11 @@ public class FSMFile {
     }
 
     public FSMLeafPage getLeafPage(int pageId) throws IOException {
-        return new FSMLeafPage(bufferPool.fetchPage(pageId));
+        return new FSMLeafPage(bufferPool.fetchPage(pageId), bufferPool);
     }
 
     public FSMInternalPage getInternalPage(int pageId) throws IOException {
-        return new FSMInternalPage(bufferPool.fetchPage(pageId));
+        return new FSMInternalPage(bufferPool.fetchPage(pageId), bufferPool);
     }
 
     public FSMLeafPage createLeafPage() throws IOException {
@@ -53,7 +53,7 @@ public class FSMFile {
         Page page = bufferPool.fetchPage(pageId);
         page.getPageHeader().setPageType(PageHeader.PageType.FSM_LEAF);
 
-        return FSMLeafPage.createFresh(page);
+        return FSMLeafPage.createFresh(page, bufferPool);
     }
 
     public FSMInternalPage createInternalPage() throws IOException {
@@ -62,7 +62,7 @@ public class FSMFile {
         Page page = bufferPool.fetchPage(pageId);
         page.getPageHeader().setPageType(PageHeader.PageType.FSM_INTERNAL);
 
-        return FSMInternalPage.createFresh(page);
+        return FSMInternalPage.createFresh(page, bufferPool);
     }
 
     public int allocatePage() throws IOException {

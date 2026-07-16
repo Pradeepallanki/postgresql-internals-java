@@ -1,6 +1,6 @@
 package com.pradeep.dbdemo.storage.fsm;
 
-import com.pradeep.dbdemo.cache.BufferPool;
+import com.pradeep.dbdemo.bufferpool.BufferPool;
 import com.pradeep.dbdemo.storage.DiskManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

@@ -1,6 +1,6 @@
 package com.pradeep.dbdemo.storage;
 
-import com.pradeep.dbdemo.cache.BufferPool;
+import com.pradeep.dbdemo.bufferpool.BufferPool;
 import com.pradeep.dbdemo.storage.fsm.DiskFSMImpl;
 import com.pradeep.dbdemo.storage.fsm.FSMFile;
 import com.pradeep.dbdemo.storage.fsm.FreeSpaceMap;
@@ -168,6 +168,62 @@ class HeapFileTest {
 
         }
 
+    }
+
+    @Test
+    void shouldReuseSlotNumbersCorrectlyAfterDeleteAndReinsert() throws Exception {
+
+        HeapFile heapFile = new HeapFile(bufferPool, freeSpaceMap);
+
+        List<RID> rids = new ArrayList<>();
+
+        List<byte[]> tuples = new ArrayList<>();
+
+        for (int i = 0; i < 50; i++) {
+
+            byte[] tuple =
+                    ("Row-" + i).getBytes();
+
+            tuples.add(tuple);
+
+            rids.add(heapFile.insert(tuple));
+
+        }
+
+        for (int i = 0; i < rids.size(); i += 2) {
+
+            heapFile.delete(rids.get(i));
+
+        }
+
+        // survivors must still be readable by their original RIDs after later inserts have re-used the file
+        List<RID> moreRids = new ArrayList<>();
+
+        for (int i = 0; i < 20; i++) {
+
+            moreRids.add(heapFile.insert(("Extra-" + i).getBytes()));
+
+        }
+
+        for (int i = 0; i < rids.size(); i++) {
+
+            if (i % 2 == 0) {
+
+                assertNull(heapFile.read(rids.get(i)));
+
+            } else {
+
+                assertArrayEquals(tuples.get(i), heapFile.read(rids.get(i)));
+
+            }
+
+        }
+
+        for (int i = 0; i < moreRids.size(); i++) {
+
+            assertArrayEquals(("Extra-" + i).getBytes(), heapFile.read(moreRids.get(i)));
+
+        }
     }
 
     @Test

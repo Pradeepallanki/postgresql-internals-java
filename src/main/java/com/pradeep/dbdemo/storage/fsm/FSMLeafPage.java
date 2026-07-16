@@ -1,5 +1,6 @@
 package com.pradeep.dbdemo.storage.fsm;
 
+import com.pradeep.dbdemo.bufferpool.BufferPool;
 import com.pradeep.dbdemo.storage.Page;
 import com.pradeep.dbdemo.storage.PageHeader;
 
@@ -9,26 +10,28 @@ public class FSMLeafPage {
 
     private final Page page;
     private final FSMLeafHeader fsmLeafHeader;
+    private final BufferPool bufferPool;
 
-    public FSMLeafPage(Page page) {
-        this(readHeader(page), page);
+    public FSMLeafPage(Page page, BufferPool bufferPool) {
+        this(readHeader(page), page, bufferPool);
     }
 
-    public static FSMLeafPage createFresh(Page page) {
+    public static FSMLeafPage createFresh(Page page, BufferPool bufferPool) {
         FSMLeafHeader header = new FSMLeafHeader(0);
 
         ByteBuffer buffer = ByteBuffer.wrap(page.getData());
         buffer.position(PageHeader.SIZE);
         header.writeTo(buffer);
 
-        page.markDirty();
+        bufferPool.markDirty(page.getPageId());
 
-        return new FSMLeafPage(header, page);
+        return new FSMLeafPage(header, page, bufferPool);
     }
 
-    public FSMLeafPage(FSMLeafHeader fsmLeafHeader, Page page) {
+    public FSMLeafPage(FSMLeafHeader fsmLeafHeader, Page page, BufferPool bufferPool) {
         this.fsmLeafHeader = fsmLeafHeader;
         this.page = page;
+        this.bufferPool = bufferPool;
     }
 
     private static FSMLeafHeader readHeader(Page page) {
@@ -63,7 +66,7 @@ public class FSMLeafPage {
             FSMLeafEntry entry = readEntry(index);
             entry.setFreeSpace((short) freeBytes);
             writeEntry(index, entry);
-            page.markDirty();
+            bufferPool.markDirty(page.getPageId());
             return;
         }
 
@@ -81,7 +84,7 @@ public class FSMLeafPage {
 
         writeHeader();
 
-        page.markDirty();
+        bufferPool.markDirty(page.getPageId());
     }
 
     public boolean containsHeapPage(int heapPageId) {

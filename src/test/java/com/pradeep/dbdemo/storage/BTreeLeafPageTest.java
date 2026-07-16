@@ -1,6 +1,6 @@
 package com.pradeep.dbdemo.storage;
 
-import com.pradeep.dbdemo.cache.BufferPool;
+import com.pradeep.dbdemo.bufferpool.BufferPool;
 import com.pradeep.dbdemo.storage.btree.leaf.BTreeLeafHeader;
 import com.pradeep.dbdemo.storage.btree.leaf.BTreeLeafPage;
 import com.pradeep.dbdemo.storage.btree.leaf.LeafSplitResult;

@@ -1,6 +1,7 @@
 package com.pradeep.dbdemo.storage.btree;
 
-import com.pradeep.dbdemo.cache.BufferPool;
+import com.pradeep.dbdemo.bufferpool.BufferPool;
+import com.pradeep.dbdemo.storage.Catalog;
 import com.pradeep.dbdemo.storage.Page;
 import com.pradeep.dbdemo.storage.PageHeader;
 import com.pradeep.dbdemo.storage.RID;
@@ -21,14 +22,36 @@ public class Btree {
 
     private final BTreeMetadata bTreeMetadata;
 
+    // when non-null, root-pointer changes are propagated to the catalog so they survive restart.
+    private final Catalog catalog;
+    private final String indexName;
+
     public Btree(BufferPool bufferPool) throws IOException {
         this.bufferPool = bufferPool;
+        this.catalog = null;
+        this.indexName = null;
         this.bTreeMetadata = buildMetaData();
     }
 
     public Btree(BufferPool bufferPool, BTreeMetadata bTreeMetadata) {
         this.bufferPool = bufferPool;
+        this.catalog = null;
+        this.indexName = null;
         this.bTreeMetadata = bTreeMetadata;
+    }
+
+    public Btree(BufferPool bufferPool, Catalog catalog, String indexName) throws IOException {
+        this.bufferPool = bufferPool;
+        this.catalog = catalog;
+        this.indexName = indexName;
+
+        Catalog.IndexEntry entry = catalog.lookup(indexName);
+        if (entry != null) {
+            this.bTreeMetadata = new BTreeMetadata(entry.rootPageId());
+        } else {
+            this.bTreeMetadata = buildMetaData();
+            catalog.registerIndex(indexName, Catalog.INDEX_TYPE_BTREE, this.bTreeMetadata.getRootPageId());
+        }
     }
 
     private BTreeMetadata buildMetaData() throws IOException {
@@ -45,7 +68,7 @@ public class Btree {
 
         leaf.writeHeader();
 
-        page.markDirty();
+        bufferPool.markDirty(page.getPageId());
 
         return new BTreeMetadata(pageId);
     }
@@ -167,10 +190,16 @@ public class Btree {
                 split.newPageId()
         );
 
-        root.markDirty();
+        bufferPool.markDirty(root.getPageId());
 
         bTreeMetadata.setRootPageId(newRootPageId);
+        notifyCatalogOfRootChange(newRootPageId);
+    }
 
+    private void notifyCatalogOfRootChange(int newRootPageId) throws IOException {
+        if (catalog != null) {
+            catalog.updateRoot(indexName, newRootPageId);
+        }
     }
 
     public BTreeMetadata getbTreeMetadata() {
@@ -370,7 +399,7 @@ public class Btree {
 
             next.writeHeader();
 
-            nextPage.markDirty();
+            bufferPool.markDirty(nextPage.getPageId());
         }
 
         parent.removeEntry(separatorIndex);
@@ -537,6 +566,7 @@ public class Btree {
         int oldRootPageId = bTreeMetadata.getRootPageId();
 
         bTreeMetadata.setRootPageId(newRootPageId);
+        notifyCatalogOfRootChange(newRootPageId);
 
         bufferPool.freePage(oldRootPageId);
     }

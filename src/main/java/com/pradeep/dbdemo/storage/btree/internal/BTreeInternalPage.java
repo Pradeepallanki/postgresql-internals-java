@@ -1,6 +1,6 @@
 package com.pradeep.dbdemo.storage.btree.internal;
 
-import com.pradeep.dbdemo.cache.BufferPool;
+import com.pradeep.dbdemo.bufferpool.BufferPool;
 import com.pradeep.dbdemo.storage.Page;
 import com.pradeep.dbdemo.storage.PageHeader;
 
@@ -124,8 +124,8 @@ public class BTreeInternalPage {
                 rightEntries
         );
 
-        page.markDirty();
-        newPage.markDirty();
+        bufferPool.markDirty(page.getPageId());
+        bufferPool.markDirty(newPage.getPageId());
 
         return new InternalSplitResult(
                 promoted.separatorKey(),
@@ -246,7 +246,7 @@ public class BTreeInternalPage {
 
         writeHeader();
 
-        page.markDirty();
+        bufferPool.markDirty(page.getPageId());
     }
 
     public int findChild(long key) {
@@ -329,7 +329,7 @@ public class BTreeInternalPage {
 
         writeHeader();
 
-        page.markDirty();
+        bufferPool.markDirty(page.getPageId());
     }
 
     public void updateSeparatorAt(int index, long newKey) {
@@ -344,7 +344,7 @@ public class BTreeInternalPage {
                 )
         );
 
-        page.markDirty();
+        bufferPool.markDirty(page.getPageId());
     }
 
     public List<BtreeInternalEntry> readAllEntries() {
@@ -363,7 +363,7 @@ public class BTreeInternalPage {
 
         rewriteEntries(page, btreeInternalHeader, entries);
 
-        page.markDirty();
+        bufferPool.markDirty(page.getPageId());
     }
 
     public boolean underflows() {

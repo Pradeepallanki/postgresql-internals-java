@@ -1,5 +1,6 @@
 package com.pradeep.dbdemo.storage.fsm;
 
+import com.pradeep.dbdemo.bufferpool.BufferPool;
 import com.pradeep.dbdemo.storage.Page;
 import com.pradeep.dbdemo.storage.PageHeader;
 
@@ -16,12 +17,14 @@ public class FSMMetaPage {
     private static final int NEXT_OFFSET   = HEIGHT_OFFSET + Integer.BYTES;
 
     private final Page page;
+    private final BufferPool bufferPool;
     private int rootPageId;
     private int treeHeight;
     private int nextFSMPageId;
 
-    public FSMMetaPage(Page page) {
+    public FSMMetaPage(Page page, BufferPool bufferPool) {
         this.page = page;
+        this.bufferPool = bufferPool;
 
         ByteBuffer buffer = ByteBuffer.wrap(page.getData());
         buffer.position(ROOT_OFFSET);
@@ -31,8 +34,8 @@ public class FSMMetaPage {
         this.nextFSMPageId = buffer.getInt();
     }
 
-    public static FSMMetaPage createFresh(Page page, int firstFSMPageId) {
-        FSMMetaPage meta = new FSMMetaPage(page);
+    public static FSMMetaPage createFresh(Page page, int firstFSMPageId, BufferPool bufferPool) {
+        FSMMetaPage meta = new FSMMetaPage(page, bufferPool);
 
         meta.rootPageId    = INVALID_PAGE_ID;
         meta.treeHeight    = 0;
@@ -58,13 +61,13 @@ public class FSMMetaPage {
     public void setRootPageId(int rootPageId) {
         this.rootPageId = rootPageId;
         writeInt(ROOT_OFFSET, rootPageId);
-        page.markDirty();
+        bufferPool.markDirty(page.getPageId());
     }
 
     public void setTreeHeight(int treeHeight) {
         this.treeHeight = treeHeight;
         writeInt(HEIGHT_OFFSET, treeHeight);
-        page.markDirty();
+        bufferPool.markDirty(page.getPageId());
     }
 
     public int reserveNextFSMPageId() {
@@ -73,7 +76,7 @@ public class FSMMetaPage {
         nextFSMPageId++;
 
         writeInt(NEXT_OFFSET, nextFSMPageId);
-        page.markDirty();
+        bufferPool.markDirty(page.getPageId());
 
         return allocated;
     }
@@ -83,7 +86,7 @@ public class FSMMetaPage {
         writeInt(HEIGHT_OFFSET, treeHeight);
         writeInt(NEXT_OFFSET,   nextFSMPageId);
 
-        page.markDirty();
+        bufferPool.markDirty(page.getPageId());
     }
 
     private void writeInt(int offset, int value) {

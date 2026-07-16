@@ -1,22 +1,32 @@
 package com.pradeep.dbdemo.storage;
 
+import com.pradeep.dbdemo.bufferpool.BufferPool;
+
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 public class HeapPage {
     private final Page page;
+    private final BufferPool bufferPool;
 
-    public HeapPage(Page page) {
+    public HeapPage(Page page, BufferPool bufferPool) {
         this.page = page;
+        this.bufferPool = bufferPool;
     }
 
     public RID insert(byte[] tuple) {
-        if (!hasSpace(tuple.length)) {
-            throw new IllegalStateException("Page size is full");
-        }
-
         if (tuple.length == 0) {
             throw new IllegalArgumentException("tuple cannot be empty");
+        }
+
+        if (!hasSpace(tuple.length)) {
+            // gaps left by deletes aren't reflected in freeSpaceOffSet — try to reclaim them before giving up.
+            compact();
+            if (!hasSpace(tuple.length)) {
+                throw new IllegalStateException("Page size is full");
+            }
         }
 
         PageHeader pageHeader = page.getPageHeader();
@@ -33,7 +43,7 @@ public class HeapPage {
 
         ByteBuffer buffer = ByteBuffer.wrap(page.getData());
         page.getPageHeader().writeTo(buffer);
-        this.page.markDirty();
+        bufferPool.markDirty(page.getPageId());
         return new RID(page.getPageId(), (short) slotNumber);
     }
 
@@ -54,7 +64,7 @@ public class HeapPage {
         Slot slot = readSlot(rid.slotNumber());
         slot.setDeleted(true);
         writeSlot(slot, rid.slotNumber());
-        this.page.markDirty();
+        bufferPool.markDirty(page.getPageId());
         return true;
     }
 
@@ -91,6 +101,47 @@ public class HeapPage {
 
     public static Integer getTotalRequiredSpace(int tupleSize) {
         return tupleSize + Slot.SIZE;
+    }
+
+    public void compact() {
+        PageHeader pageHeader = page.getPageHeader();
+        int slotCount = pageHeader.getSlotCount();
+        byte[] data = page.getData();
+
+        List<Slot> liveSlots = new ArrayList<>();
+        List<Short> liveSlotNumbers = new ArrayList<>();
+        for (short i = 0; i < slotCount; i++) {
+            Slot slot = readSlot(i);
+            if (!slot.isDeleted()) {
+                liveSlots.add(slot);
+                liveSlotNumbers.add(i);
+            }
+        }
+
+        // walk tuples from highest current offset to lowest, so every move goes upward toward PAGE_SIZE and can never overwrite a tuple we still need to move.
+        Integer[] order = new Integer[liveSlots.size()];
+        for (int i = 0; i < order.length; i++) {
+            order[i] = i;
+        }
+        Arrays.sort(order, (a, b) -> Short.compare(liveSlots.get(b).getOffset(), liveSlots.get(a).getOffset()));
+
+        int newFreeSpaceOffSet = Page.PAGE_SIZE;
+        for (int idx : order) {
+            Slot slot = liveSlots.get(idx);
+            short length = slot.getLength();
+            short newOffset = (short) (newFreeSpaceOffSet - length);
+            if (newOffset != slot.getOffset()) {
+                System.arraycopy(data, slot.getOffset(), data, newOffset, length);
+                slot.setOffset(newOffset);
+                writeSlot(slot, liveSlotNumbers.get(idx));
+            }
+            newFreeSpaceOffSet = newOffset;
+        }
+
+        pageHeader.setFreeSpaceOffSet(newFreeSpaceOffSet);
+        ByteBuffer buffer = ByteBuffer.wrap(data);
+        pageHeader.writeTo(buffer);
+        bufferPool.markDirty(page.getPageId());
     }
 
 
