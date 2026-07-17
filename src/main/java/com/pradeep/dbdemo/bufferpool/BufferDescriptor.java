@@ -7,11 +7,22 @@ public class BufferDescriptor {
     private final int pageId;
     private boolean isDirty;
     private int pinCount;
+    private int usageCount;
     private final Page page;
 
     public BufferDescriptor(int pageId, Page page) {
         this.pageId = pageId;
         this.page = page;
+    }
+
+    public void unPin() {
+        if (this.pinCount > 0) {
+            this.pinCount--;
+        }
+    }
+
+    public void pin() {
+        pinCount++;
     }
 
     public int getPageId() {
@@ -52,5 +63,13 @@ public class BufferDescriptor {
 
     public void markUnDirty() {
         this.isDirty = false;
+    }
+
+    public int getUsageCount() {
+        return usageCount;
+    }
+
+    public void setUsageCount(int usageCount) {
+        this.usageCount = usageCount;
     }
 }
