@@ -7,8 +7,6 @@ import com.pradeep.dbdemo.wal.WalManager;
 import com.pradeep.dbdemo.wal.WalOperation;
 import com.pradeep.dbdemo.wal.WalRecord;
 
-import java.io.UncheckedIOException;
-
 import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.Arrays;
@@ -128,6 +126,8 @@ public class BufferPool {
             }
 
             if (descriptor.isDirty()) {
+                // WAL-first: flush pending records so the victim's protecting log entry is durable before the page is written back.
+                walManager.flush();
                 diskManager.writePage(descriptor.getPage());
             }
             pageToSlot.remove(descriptor.getPageId());
@@ -161,11 +161,16 @@ public class BufferPool {
         BufferDescriptor descriptor = frames[slot];
         if (!descriptor.isDirty()) return;
 
+        // write-ahead: every WAL record that protects this page must be durable before the page is.
+        walManager.flush();
+
         diskManager.writePage(descriptor.getPage());
         descriptor.markUnDirty();
     }
 
     public synchronized void flushAll() throws IOException {
+        walManager.flush();
+
         for (BufferDescriptor descriptor : frames) {
             if (descriptor != null && descriptor.isDirty()) {
                 diskManager.writePage(descriptor.getPage());
@@ -178,6 +183,9 @@ public class BufferPool {
         // resume from where the last cycle left off so we rotate through the whole array over successive calls, instead of always favouring the low-index slots.
         int cleaned = 0;
         int scanned = 0;
+
+        // WAL first: batch-write any pending records so no page we're about to write out-races its log record.
+        walManager.flush();
 
         while (cleaned < maxSize && scanned < frames.length) {
             int index = (writerCursor + scanned) & mask;
@@ -204,16 +212,12 @@ public class BufferPool {
     //   1. long lsn = bufferPool.log(pageId, op, payload);
     //   2. <perform the mutation on page bytes>
     //   3. bufferPool.markDirtyAtLsn(pageId, lsn);
-    // step 1 appends the record and mints the LSN; step 3 stamps pageLSN and flips the dirty flag.
-    // splitting them lets callers place the actual mutation *between* the WAL append and the pageLSN stamp,
-    // which is the assignment-mandated order. IOException is wrapped so mutation methods don't have to declare it.
+    // step 1 stages the record in the WAL buffer and mints the LSN (no disk I/O); step 3 stamps
+    // pageLSN and flips the dirty flag. The buffered log is drained by walManager.flush(), which
+    // BufferPool triggers before writing any page back to disk (see flushPage / flushAll / eviction).
 
     public synchronized long log(int pageId, WalOperation operation, byte[] payload) {
-        try {
-            return walManager.append(new WalRecord(operation, pageId, payload));
-        } catch (IOException e) {
-            throw new UncheckedIOException("WAL append failed for page " + pageId, e);
-        }
+        return walManager.append(new WalRecord(operation, pageId, payload));
     }
 
     public synchronized void markDirtyAtLsn(int pageId, long lsn) {

@@ -80,6 +80,8 @@ class WalIntegrationTest {
         long l2 = walManager.append(new WalRecord(WalOperation.DELETE_TUPLE, 2, p2));
         long l3 = walManager.append(new WalRecord(WalOperation.UPDATE_TUPLE, 3, p3));
 
+        walManager.flush();
+
         List<WalRecord> log = walManager.readAll();
 
         assertEquals(3, log.size());
@@ -110,6 +112,7 @@ class WalIntegrationTest {
         assertEquals(lsnBefore, stampedLsn);
 
         // and the last record in the file must carry that same LSN and the operation type.
+        walManager.flush();
         List<WalRecord> log = walManager.readAll();
         WalRecord last = log.get(log.size() - 1);
         assertEquals(stampedLsn, last.getLsn());
@@ -132,6 +135,7 @@ class WalIntegrationTest {
         heap.compact();
 
         // record what append handed out to us — the LSN sequence should exactly match readAll().
+        walManager.flush();
         List<WalRecord> log = walManager.readAll();
         assertFalse(log.isEmpty());
 
