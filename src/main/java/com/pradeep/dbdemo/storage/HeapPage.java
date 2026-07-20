@@ -1,6 +1,7 @@
 package com.pradeep.dbdemo.storage;
 
 import com.pradeep.dbdemo.bufferpool.BufferPool;
+import com.pradeep.dbdemo.wal.WalOperation;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -29,6 +30,9 @@ public class HeapPage {
             }
         }
 
+        // WAL-first: append the record (which mints the LSN), then mutate, then stamp pageLSN + mark dirty.
+        long lsn = bufferPool.log(page.getPageId(), WalOperation.INSERT_TUPLE, tuple);
+
         PageHeader pageHeader = page.getPageHeader();
         short freeOffSet = (short) (pageHeader.getFreeSpaceOffSet() - tuple.length); // freeSpaceOffSet is actually set to beginning of the last inserted tuple. before inserting the new tuple, we need to bring the offset to the point where we can insert the tuple
         System.arraycopy(tuple, 0, page.getData(), freeOffSet, tuple.length);
@@ -41,9 +45,10 @@ public class HeapPage {
         pageHeader.setSlotCount(pageHeader.getSlotCount() + 1); // slot count is always prevCount+1
         pageHeader.setFreeSpaceOffSet(freeOffSet);
 
+        pageHeader.setPageLSN(lsn);
         ByteBuffer buffer = ByteBuffer.wrap(page.getData());
         page.getPageHeader().writeTo(buffer);
-        bufferPool.markDirty(page.getPageId());
+        bufferPool.markDirtyAtLsn(page.getPageId(), lsn);
         return new RID(page.getPageId(), (short) slotNumber);
     }
 
@@ -61,10 +66,12 @@ public class HeapPage {
 
     public boolean delete(RID rid) {
         validateRID(rid);
+        long lsn = bufferPool.log(page.getPageId(), WalOperation.DELETE_TUPLE, new byte[0]);
         Slot slot = readSlot(rid.slotNumber());
         slot.setDeleted(true);
         writeSlot(slot, rid.slotNumber());
-        bufferPool.markDirty(page.getPageId());
+        page.getPageHeader().setPageLSN(lsn);
+        bufferPool.markDirtyAtLsn(page.getPageId(), lsn);
         return true;
     }
 
@@ -104,6 +111,7 @@ public class HeapPage {
     }
 
     public void compact() {
+        long lsn = bufferPool.log(page.getPageId(), WalOperation.UPDATE_TUPLE, new byte[0]);
         PageHeader pageHeader = page.getPageHeader();
         int slotCount = pageHeader.getSlotCount();
         byte[] data = page.getData();
@@ -139,9 +147,10 @@ public class HeapPage {
         }
 
         pageHeader.setFreeSpaceOffSet(newFreeSpaceOffSet);
+        pageHeader.setPageLSN(lsn);
         ByteBuffer buffer = ByteBuffer.wrap(data);
         pageHeader.writeTo(buffer);
-        bufferPool.markDirty(page.getPageId());
+        bufferPool.markDirtyAtLsn(page.getPageId(), lsn);
     }
 
 

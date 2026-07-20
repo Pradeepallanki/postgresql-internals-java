@@ -1,6 +1,7 @@
 package com.pradeep.dbdemo.storage;
 
 import com.pradeep.dbdemo.bufferpool.BufferPool;
+import com.pradeep.dbdemo.wal.WalOperation;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -105,6 +106,9 @@ public class Catalog {
 
     private void flush() throws IOException {
         Page page = bufferPool.fetchPage(CATALOG_PAGE_ID);
+        long lsn = bufferPool.log(CATALOG_PAGE_ID, WalOperation.UPDATE_TUPLE, new byte[0]);
+
+        page.getPageHeader().setPageLSN(lsn);
 
         ByteBuffer buf = ByteBuffer.wrap(page.getData());
         page.getPageHeader().writeTo(buf);
@@ -120,6 +124,6 @@ public class Catalog {
             buf.putInt(e.rootPageId);
         }
 
-        this.bufferPool.markDirty(page.getPageId());
+        this.bufferPool.markDirtyAtLsn(page.getPageId(), lsn);
     }
 }

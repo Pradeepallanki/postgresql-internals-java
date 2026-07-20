@@ -11,6 +11,7 @@ import com.pradeep.dbdemo.storage.btree.internal.BtreeInternalHeader;
 import com.pradeep.dbdemo.storage.btree.leaf.BTreeLeafHeader;
 import com.pradeep.dbdemo.storage.btree.leaf.BTreeLeafPage;
 import com.pradeep.dbdemo.storage.btree.leaf.BtreeLeafEntry;
+import com.pradeep.dbdemo.wal.WalOperation;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -59,6 +60,8 @@ public class Btree {
 
         Page page = bufferPool.fetchPage(pageId);
 
+        long lsn = bufferPool.log(pageId, WalOperation.ALLOCATE_PAGE, new byte[0]);
+
         page.getPageHeader().setPageType(PageHeader.PageType.BTREE_LEAF);
 
         page.getPageHeader().writeTo(ByteBuffer.wrap(page.getData()));
@@ -68,7 +71,8 @@ public class Btree {
 
         leaf.writeHeader();
 
-        bufferPool.markDirty(page.getPageId());
+        page.getPageHeader().setPageLSN(lsn);
+        bufferPool.markDirtyAtLsn(pageId, lsn);
 
         return new BTreeMetadata(pageId);
     }
@@ -169,6 +173,8 @@ public class Btree {
         Page root =
                 bufferPool.fetchPage(newRootPageId);
 
+        long lsn = bufferPool.log(newRootPageId, WalOperation.ALLOCATE_PAGE, new byte[0]);
+
         root.getPageHeader()
                 .setPageType(PageHeader.PageType.BTREE_INTERNAL);
 
@@ -185,12 +191,14 @@ public class Btree {
                         bufferPool
                 );
 
+        // insertSeparator will emit its own WAL record and stamp its own LSN — this stamp captures the earlier ALLOCATE_PAGE step. The final pageLSN is whichever LSN is higher (insertSeparator's, since it's later).
+        root.getPageHeader().setPageLSN(lsn);
+        bufferPool.markDirtyAtLsn(root.getPageId(), lsn);
+
         internal.insertSeparator(
                 split.separatorKey(),
                 split.newPageId()
         );
-
-        bufferPool.markDirty(root.getPageId());
 
         bTreeMetadata.setRootPageId(newRootPageId);
         notifyCatalogOfRootChange(newRootPageId);
@@ -388,18 +396,13 @@ public class Btree {
         left.mergeFrom(right);
 
         if (rightNext != -1) {
-
+            long lsn = bufferPool.log(rightNext, WalOperation.UPDATE_TUPLE, new byte[0]);
             Page nextPage = bufferPool.fetchPage(rightNext);
-
-            BTreeLeafPage next =
-                    new BTreeLeafPage(nextPage, bufferPool);
-
-            next.getbTreeLeafHeader()
-                    .setPrevLeafPageId(left.getPage().getPageId());
-
+            BTreeLeafPage next = new BTreeLeafPage(nextPage, bufferPool);
+            next.getbTreeLeafHeader().setPrevLeafPageId(left.getPage().getPageId());
             next.writeHeader();
-
-            bufferPool.markDirty(nextPage.getPageId());
+            nextPage.getPageHeader().setPageLSN(lsn);
+            bufferPool.markDirtyAtLsn(nextPage.getPageId(), lsn);
         }
 
         parent.removeEntry(separatorIndex);

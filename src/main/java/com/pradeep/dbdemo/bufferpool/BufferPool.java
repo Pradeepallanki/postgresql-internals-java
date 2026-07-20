@@ -3,6 +3,11 @@ package com.pradeep.dbdemo.bufferpool;
 import com.pradeep.dbdemo.storage.DiskManager;
 import com.pradeep.dbdemo.storage.Page;
 import com.pradeep.dbdemo.storage.PageHeader;
+import com.pradeep.dbdemo.wal.WalManager;
+import com.pradeep.dbdemo.wal.WalOperation;
+import com.pradeep.dbdemo.wal.WalRecord;
+
+import java.io.UncheckedIOException;
 
 import java.io.IOException;
 import java.util.ArrayDeque;
@@ -16,6 +21,7 @@ public class BufferPool {
     // pageToSlot indexes it by pageId so hits stay O(1). freeSlots tracks which array indices are currently unoccupied.
     // freePages (disk-level free list) is separate — it tracks pageIds that can be handed back out by allocatePage, not frame slots.
     private final DiskManager diskManager;
+    private final WalManager walManager;
     private final BufferDescriptor[] frames;
     private final int mask;
     private final Map<Integer, Integer> pageToSlot;
@@ -28,13 +34,20 @@ public class BufferPool {
     public static final int DEFAULT_CACHE_SIZE = 1024;
     private static final int MAX_USAGE = 5;
 
+    // convenience constructors use an in-memory WAL so unit tests that don't care about crash recovery keep working.
+    // production callers should use the file-backed constructor with WalManager.forFile(path).
     public BufferPool(DiskManager diskManager) {
-        this(diskManager, DEFAULT_CACHE_SIZE);
+        this(diskManager, DEFAULT_CACHE_SIZE, WalManager.inMemory());
     }
 
     public BufferPool(DiskManager diskManager, int requestedSize) {
+        this(diskManager, requestedSize, WalManager.inMemory());
+    }
+
+    public BufferPool(DiskManager diskManager, int requestedSize, WalManager walManager) {
         int size = ceilPowerOfTwo(requestedSize);
         this.diskManager = diskManager;
+        this.walManager = walManager;
         this.frames = new BufferDescriptor[size];
         this.mask = size - 1;
         this.pageToSlot = new HashMap<>(size);
@@ -43,6 +56,10 @@ public class BufferPool {
             freeSlots.push(i);
         }
         this.freePages = new ArrayDeque<>();
+    }
+
+    public WalManager getWalManager() {
+        return walManager;
     }
 
     private static int ceilPowerOfTwo(int n) {
@@ -75,11 +92,12 @@ public class BufferPool {
         Integer reused = freePages.pollFirst();
         if (reused != null) {
             Page page = fetchPage(reused);
+            long lsn = log(reused, WalOperation.ALLOCATE_PAGE, new byte[0]);
             Arrays.fill(page.getData(), (byte) 0);
             page.getPageHeader().setPageType(PageHeader.PageType.EMPTY);
             page.getPageHeader().setSlotCount(0);
             page.getPageHeader().setFreeSpaceOffSet(Page.PAGE_SIZE);
-            markDirty(reused);
+            markDirtyAtLsn(reused, lsn);
             return reused;
         }
         return this.diskManager.allocatePage();
@@ -182,6 +200,30 @@ public class BufferPool {
         return diskManager.getPageCount();
     }
 
+    // WAL-first sequence for a page mutation:
+    //   1. long lsn = bufferPool.log(pageId, op, payload);
+    //   2. <perform the mutation on page bytes>
+    //   3. bufferPool.markDirtyAtLsn(pageId, lsn);
+    // step 1 appends the record and mints the LSN; step 3 stamps pageLSN and flips the dirty flag.
+    // splitting them lets callers place the actual mutation *between* the WAL append and the pageLSN stamp,
+    // which is the assignment-mandated order. IOException is wrapped so mutation methods don't have to declare it.
+
+    public synchronized long log(int pageId, WalOperation operation, byte[] payload) {
+        try {
+            return walManager.append(new WalRecord(operation, pageId, payload));
+        } catch (IOException e) {
+            throw new UncheckedIOException("WAL append failed for page " + pageId, e);
+        }
+    }
+
+    public synchronized void markDirtyAtLsn(int pageId, long lsn) {
+        BufferDescriptor descriptor = frames[pageToSlot.get(pageId)];
+        descriptor.getPage().getPageHeader().setPageLSN(lsn);
+        descriptor.markDirty();
+    }
+
+    // bare dirty-flip for tests / callers that don't need to append a WAL record (e.g., simulating a dirty buffer).
+    // production mutation sites must use the log() + markDirtyAtLsn() pair.
     public synchronized void markDirty(int pageId) {
         frames[pageToSlot.get(pageId)].markDirty();
     }

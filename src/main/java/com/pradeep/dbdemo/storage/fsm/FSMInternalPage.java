@@ -3,6 +3,7 @@ package com.pradeep.dbdemo.storage.fsm;
 import com.pradeep.dbdemo.bufferpool.BufferPool;
 import com.pradeep.dbdemo.storage.Page;
 import com.pradeep.dbdemo.storage.PageHeader;
+import com.pradeep.dbdemo.wal.WalOperation;
 
 import java.nio.ByteBuffer;
 
@@ -22,13 +23,16 @@ public class FSMInternalPage {
     }
 
     public static FSMInternalPage createFresh(Page page, BufferPool bufferPool) {
+        long lsn = bufferPool.log(page.getPageId(), WalOperation.UPDATE_TUPLE, new byte[0]);
+
         FSMInternalHeader header = new FSMInternalHeader(0);
 
         ByteBuffer buffer = ByteBuffer.wrap(page.getData());
         buffer.position(PageHeader.SIZE);
         header.writeInto(buffer);
 
-        bufferPool.markDirty(page.getPageId());
+        page.getPageHeader().setPageLSN(lsn);
+        bufferPool.markDirtyAtLsn(page.getPageId(), lsn);
 
         return new FSMInternalPage(page, header, bufferPool);
     }
@@ -50,11 +54,14 @@ public class FSMInternalPage {
     public void updateChildSummary(int childPageId, int maxFreeSpace) {
         int index = findChildIndex(childPageId);
 
+        long lsn = bufferPool.log(page.getPageId(), WalOperation.UPDATE_TUPLE, new byte[0]);
+
         if (index >= 0) {
             FSMInternalEntry existing = readEntry(index);
             existing.setFreeSpace((short) maxFreeSpace);
             writeEntry(index, existing);
-            bufferPool.markDirty(page.getPageId());
+            page.getPageHeader().setPageLSN(lsn);
+            bufferPool.markDirtyAtLsn(page.getPageId(), lsn);
             return;
         }
 
@@ -73,7 +80,8 @@ public class FSMInternalPage {
 
         writeHeader();
 
-        bufferPool.markDirty(page.getPageId());
+        page.getPageHeader().setPageLSN(lsn);
+        bufferPool.markDirtyAtLsn(page.getPageId(), lsn);
     }
 
     public int getChildSummary(int childPageId) {

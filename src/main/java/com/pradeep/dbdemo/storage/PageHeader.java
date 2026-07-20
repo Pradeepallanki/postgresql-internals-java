@@ -6,25 +6,29 @@ public class PageHeader {
     private int slotCount = 0;
     private int freeSpaceOffSet = Page.PAGE_SIZE;
     private PageType pageType = PageType.EMPTY;
-    public static final int SIZE = 12;
+    private long pageLSN;
+
+    public static final int SIZE = 20; // 3 ints (slotCount, freeSpaceOffSet, pageType) + 1 long (pageLSN)
 
     public PageHeader() {
     }
 
-    public PageHeader(int slotCount, int freeSpaceOffSet, PageType pageType) {
+    public PageHeader(int slotCount, int freeSpaceOffSet, PageType pageType, long pageLSN) {
         this.slotCount = slotCount;
         this.freeSpaceOffSet = freeSpaceOffSet;
         this.pageType = pageType;
+        this.pageLSN = pageLSN;
     }
 
     public void writeTo(ByteBuffer byteBuffer) {
         byteBuffer.putInt(slotCount);
         byteBuffer.putInt(freeSpaceOffSet);
         byteBuffer.putInt(pageType.ordinal());
+        byteBuffer.putLong(pageLSN);
     }
 
     public static PageHeader readFrom(ByteBuffer byteBuffer) {
-        return new PageHeader(byteBuffer.getInt(), byteBuffer.getInt(), PageType.values()[byteBuffer.getInt()]);
+        return new PageHeader(byteBuffer.getInt(), byteBuffer.getInt(), PageType.values()[byteBuffer.getInt()], byteBuffer.getLong());
     }
 
     public int getFreeSpaceOffSet() {
@@ -49,6 +53,14 @@ public class PageHeader {
 
     public void setPageType(PageType pageType) {
         this.pageType = pageType;
+    }
+
+    public long getPageLSN() {
+        return pageLSN;
+    }
+
+    public void setPageLSN(long pageLSN) {
+        this.pageLSN = pageLSN;
     }
 
     public enum PageType {

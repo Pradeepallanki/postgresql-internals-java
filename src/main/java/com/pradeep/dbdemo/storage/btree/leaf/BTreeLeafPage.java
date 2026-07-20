@@ -4,6 +4,7 @@ import com.pradeep.dbdemo.bufferpool.BufferPool;
 import com.pradeep.dbdemo.storage.Page;
 import com.pradeep.dbdemo.storage.PageHeader;
 import com.pradeep.dbdemo.storage.RID;
+import com.pradeep.dbdemo.wal.WalOperation;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -128,36 +129,29 @@ public class BTreeLeafPage {
                         page.getPageId()
                 );
 
+        long relinkLsn = -1;
         if (oldNext != -1) {
+            relinkLsn = bufferPool.log(oldNext, WalOperation.UPDATE_TUPLE, new byte[0]);
+        }
+        long leftLsn = bufferPool.log(page.getPageId(), WalOperation.BTREE_SPLIT, new byte[0]);
+        long rightLsn = bufferPool.log(newPageId, WalOperation.BTREE_SPLIT, new byte[0]);
 
-            Page nextPage =
-                    bufferPool.fetchPage(oldNext);
-
-            BTreeLeafPage nextLeaf =
-                    new BTreeLeafPage(nextPage, bufferPool);
-
-            nextLeaf.getbTreeLeafHeader()
-                    .setPrevLeafPageId(newPageId);
-
+        if (oldNext != -1) {
+            Page nextPage = bufferPool.fetchPage(oldNext);
+            BTreeLeafPage nextLeaf = new BTreeLeafPage(nextPage, bufferPool);
+            nextLeaf.getbTreeLeafHeader().setPrevLeafPageId(newPageId);
             nextLeaf.writeHeader();
-
-            bufferPool.markDirty(nextPage.getPageId());
+            nextPage.getPageHeader().setPageLSN(relinkLsn);
+            bufferPool.markDirtyAtLsn(nextPage.getPageId(), relinkLsn);
         }
 
-        rewriteEntries(
-                page,
-                bTreeLeafHeader,
-                leftEntries
-        );
+        rewriteEntries(page, bTreeLeafHeader, leftEntries);
+        rewriteEntries(newPage, newHeader, rightEntries);
 
-        rewriteEntries(
-                newPage,
-                newHeader,
-                rightEntries
-        );
-
-        bufferPool.markDirty(page.getPageId());
-        bufferPool.markDirty(newPage.getPageId());
+        page.getPageHeader().setPageLSN(leftLsn);
+        newPage.getPageHeader().setPageLSN(rightLsn);
+        bufferPool.markDirtyAtLsn(page.getPageId(), leftLsn);
+        bufferPool.markDirtyAtLsn(newPage.getPageId(), rightLsn);
 
         return new LeafSplitResult(
                 rightEntries.getFirst().key(),
@@ -224,6 +218,7 @@ public class BTreeLeafPage {
 
 
     private void shiftAndInsert(long key, RID rid) {
+        long lsn = bufferPool.log(page.getPageId(), WalOperation.INSERT_TUPLE, new byte[0]);
 
         int low = 0;
         int high = bTreeLeafHeader.getEntryCount() - 1;
@@ -265,7 +260,8 @@ public class BTreeLeafPage {
         this.bTreeLeafHeader.setEntryCount((short) (this.bTreeLeafHeader.getEntryCount() + 1));
         writeHeader();
 
-        bufferPool.markDirty(page.getPageId());
+        page.getPageHeader().setPageLSN(lsn);
+        bufferPool.markDirtyAtLsn(page.getPageId(), lsn);
     }
 
     public boolean delete(long key) {
@@ -275,6 +271,8 @@ public class BTreeLeafPage {
         if (index == -1) {
             return false;
         }
+
+        long lsn = bufferPool.log(page.getPageId(), WalOperation.DELETE_TUPLE, new byte[0]);
 
         int count = bTreeLeafHeader.getEntryCount();
 
@@ -302,7 +300,8 @@ public class BTreeLeafPage {
 
         writeHeader();
 
-        bufferPool.markDirty(page.getPageId());
+        page.getPageHeader().setPageLSN(lsn);
+        bufferPool.markDirtyAtLsn(page.getPageId(), lsn);
 
         return true;
     }
@@ -347,13 +346,16 @@ public class BTreeLeafPage {
     }
 
     public void rewriteAllEntries(List<BtreeLeafEntry> entries) {
+        long lsn = bufferPool.log(page.getPageId(), WalOperation.UPDATE_TUPLE, new byte[0]);
 
         rewriteEntries(page, bTreeLeafHeader, entries);
 
-        bufferPool.markDirty(page.getPageId());
+        page.getPageHeader().setPageLSN(lsn);
+        bufferPool.markDirtyAtLsn(page.getPageId(), lsn);
     }
 
     public void mergeFrom(BTreeLeafPage sibling) {
+        long lsn = bufferPool.log(page.getPageId(), WalOperation.BTREE_MERGE, new byte[0]);
 
         List<BtreeLeafEntry> combined =
                 new ArrayList<>(readAllEntries());
@@ -381,7 +383,8 @@ public class BTreeLeafPage {
 
         writeHeader();
 
-        bufferPool.markDirty(page.getPageId());
+        page.getPageHeader().setPageLSN(lsn);
+        bufferPool.markDirtyAtLsn(page.getPageId(), lsn);
     }
 
     public RID search(long key) {

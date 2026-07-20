@@ -3,6 +3,7 @@ package com.pradeep.dbdemo.storage.fsm;
 import com.pradeep.dbdemo.bufferpool.BufferPool;
 import com.pradeep.dbdemo.storage.Page;
 import com.pradeep.dbdemo.storage.PageHeader;
+import com.pradeep.dbdemo.wal.WalOperation;
 
 import java.nio.ByteBuffer;
 
@@ -59,34 +60,42 @@ public class FSMMetaPage {
     }
 
     public void setRootPageId(int rootPageId) {
+        long lsn = bufferPool.log(page.getPageId(), WalOperation.UPDATE_TUPLE, new byte[0]);
         this.rootPageId = rootPageId;
         writeInt(ROOT_OFFSET, rootPageId);
-        bufferPool.markDirty(page.getPageId());
+        page.getPageHeader().setPageLSN(lsn);
+        bufferPool.markDirtyAtLsn(page.getPageId(), lsn);
     }
 
     public void setTreeHeight(int treeHeight) {
+        long lsn = bufferPool.log(page.getPageId(), WalOperation.UPDATE_TUPLE, new byte[0]);
         this.treeHeight = treeHeight;
         writeInt(HEIGHT_OFFSET, treeHeight);
-        bufferPool.markDirty(page.getPageId());
+        page.getPageHeader().setPageLSN(lsn);
+        bufferPool.markDirtyAtLsn(page.getPageId(), lsn);
     }
 
     public int reserveNextFSMPageId() {
+        long lsn = bufferPool.log(page.getPageId(), WalOperation.UPDATE_TUPLE, new byte[0]);
         int allocated = nextFSMPageId;
 
         nextFSMPageId++;
 
         writeInt(NEXT_OFFSET, nextFSMPageId);
-        bufferPool.markDirty(page.getPageId());
+        page.getPageHeader().setPageLSN(lsn);
+        bufferPool.markDirtyAtLsn(page.getPageId(), lsn);
 
         return allocated;
     }
 
     private void writeAll() {
+        long lsn = bufferPool.log(page.getPageId(), WalOperation.UPDATE_TUPLE, new byte[0]);
         writeInt(ROOT_OFFSET,   rootPageId);
         writeInt(HEIGHT_OFFSET, treeHeight);
         writeInt(NEXT_OFFSET,   nextFSMPageId);
 
-        bufferPool.markDirty(page.getPageId());
+        page.getPageHeader().setPageLSN(lsn);
+        bufferPool.markDirtyAtLsn(page.getPageId(), lsn);
     }
 
     private void writeInt(int offset, int value) {

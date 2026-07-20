@@ -3,6 +3,7 @@ package com.pradeep.dbdemo.storage.btree.internal;
 import com.pradeep.dbdemo.bufferpool.BufferPool;
 import com.pradeep.dbdemo.storage.Page;
 import com.pradeep.dbdemo.storage.PageHeader;
+import com.pradeep.dbdemo.wal.WalOperation;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -112,6 +113,9 @@ public class BTreeInternalPage {
                         promoted.rightChildPageId()
                 );
 
+        long leftLsn = bufferPool.log(page.getPageId(), WalOperation.BTREE_SPLIT, new byte[0]);
+        long rightLsn = bufferPool.log(newPage.getPageId(), WalOperation.BTREE_SPLIT, new byte[0]);
+
         rewriteEntries(
                 page,
                 btreeInternalHeader,
@@ -124,8 +128,10 @@ public class BTreeInternalPage {
                 rightEntries
         );
 
-        bufferPool.markDirty(page.getPageId());
-        bufferPool.markDirty(newPage.getPageId());
+        page.getPageHeader().setPageLSN(leftLsn);
+        newPage.getPageHeader().setPageLSN(rightLsn);
+        bufferPool.markDirtyAtLsn(page.getPageId(), leftLsn);
+        bufferPool.markDirtyAtLsn(newPage.getPageId(), rightLsn);
 
         return new InternalSplitResult(
                 promoted.separatorKey(),
@@ -195,6 +201,8 @@ public class BTreeInternalPage {
             throw new IllegalStateException("Internal page is full.");
         }
 
+        long lsn = bufferPool.log(page.getPageId(), WalOperation.INSERT_TUPLE, new byte[0]);
+
         int low = 0;
         int high = btreeInternalHeader.getEntryCount() - 1;
 
@@ -246,7 +254,8 @@ public class BTreeInternalPage {
 
         writeHeader();
 
-        bufferPool.markDirty(page.getPageId());
+        page.getPageHeader().setPageLSN(lsn);
+        bufferPool.markDirtyAtLsn(page.getPageId(), lsn);
     }
 
     public int findChild(long key) {
@@ -302,6 +311,7 @@ public class BTreeInternalPage {
     }
 
     public void removeEntry(int index) {
+        long lsn = bufferPool.log(page.getPageId(), WalOperation.DELETE_TUPLE, new byte[0]);
 
         int count = btreeInternalHeader.getEntryCount();
 
@@ -329,10 +339,12 @@ public class BTreeInternalPage {
 
         writeHeader();
 
-        bufferPool.markDirty(page.getPageId());
+        page.getPageHeader().setPageLSN(lsn);
+        bufferPool.markDirtyAtLsn(page.getPageId(), lsn);
     }
 
     public void updateSeparatorAt(int index, long newKey) {
+        long lsn = bufferPool.log(page.getPageId(), WalOperation.UPDATE_TUPLE, new byte[0]);
 
         BtreeInternalEntry existing = readEntry(index);
 
@@ -344,7 +356,8 @@ public class BTreeInternalPage {
                 )
         );
 
-        bufferPool.markDirty(page.getPageId());
+        page.getPageHeader().setPageLSN(lsn);
+        bufferPool.markDirtyAtLsn(page.getPageId(), lsn);
     }
 
     public List<BtreeInternalEntry> readAllEntries() {
@@ -360,10 +373,12 @@ public class BTreeInternalPage {
     }
 
     public void rewriteAllEntries(List<BtreeInternalEntry> entries) {
+        long lsn = bufferPool.log(page.getPageId(), WalOperation.UPDATE_TUPLE, new byte[0]);
 
         rewriteEntries(page, btreeInternalHeader, entries);
 
-        bufferPool.markDirty(page.getPageId());
+        page.getPageHeader().setPageLSN(lsn);
+        bufferPool.markDirtyAtLsn(page.getPageId(), lsn);
     }
 
     public boolean underflows() {

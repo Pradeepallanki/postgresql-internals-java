@@ -3,6 +3,7 @@ package com.pradeep.dbdemo.storage.fsm;
 import com.pradeep.dbdemo.bufferpool.BufferPool;
 import com.pradeep.dbdemo.storage.Page;
 import com.pradeep.dbdemo.storage.PageHeader;
+import com.pradeep.dbdemo.wal.WalOperation;
 
 import java.nio.ByteBuffer;
 
@@ -17,13 +18,16 @@ public class FSMLeafPage {
     }
 
     public static FSMLeafPage createFresh(Page page, BufferPool bufferPool) {
+        long lsn = bufferPool.log(page.getPageId(), WalOperation.UPDATE_TUPLE, new byte[0]);
+
         FSMLeafHeader header = new FSMLeafHeader(0);
 
         ByteBuffer buffer = ByteBuffer.wrap(page.getData());
         buffer.position(PageHeader.SIZE);
         header.writeTo(buffer);
 
-        bufferPool.markDirty(page.getPageId());
+        page.getPageHeader().setPageLSN(lsn);
+        bufferPool.markDirtyAtLsn(page.getPageId(), lsn);
 
         return new FSMLeafPage(header, page, bufferPool);
     }
@@ -62,11 +66,14 @@ public class FSMLeafPage {
     public void updateFreeSpace(int heapPageId, int freeBytes) {
         int index = findIndex(heapPageId);
 
+        long lsn = bufferPool.log(page.getPageId(), WalOperation.UPDATE_TUPLE, new byte[0]);
+
         if (index >= 0) {
             FSMLeafEntry entry = readEntry(index);
             entry.setFreeSpace((short) freeBytes);
             writeEntry(index, entry);
-            bufferPool.markDirty(page.getPageId());
+            page.getPageHeader().setPageLSN(lsn);
+            bufferPool.markDirtyAtLsn(page.getPageId(), lsn);
             return;
         }
 
@@ -84,7 +91,8 @@ public class FSMLeafPage {
 
         writeHeader();
 
-        bufferPool.markDirty(page.getPageId());
+        page.getPageHeader().setPageLSN(lsn);
+        bufferPool.markDirtyAtLsn(page.getPageId(), lsn);
     }
 
     public boolean containsHeapPage(int heapPageId) {
